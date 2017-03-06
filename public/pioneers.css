@@ -1,0 +1,41 @@
+img {
+  max-width: 512px;
+  float: right;
+}
+
+.thumbs {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-around;
+}
+
+.thumbs > a {
+  display: block;
+  width: 100px;
+}
+
+.thumbs > a > img {
+  width: 100%;
+  float: none;
+}
+
+form {
+  border: 1px solid gray;
+  border-radius: 5px;
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  width: 256px;
+  margin: 20px auto;
+}
+
+label {
+  display: block;
+}
+
+label > input, label > textarea {
+  display: block;
+  margin-bottom: 10px;
+  width: 100%;
+}
