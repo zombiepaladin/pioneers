@@ -23,51 +23,20 @@ staticFiles.loadDir('public');
 /* load templates */
 template.loadDir('templates');
 
-/** @function getPioneerFilenames
- * Retrieves the filenames for all images in the
- * /pioneers directory and supplies them to the callback.
- * @param {function} callback - function that takes an
- * error and array of filenames as parameters
- */
-function getPioneerFilenames(callback) {
-  fs.readdir('pioneers/', function(err, filenames){
-    if(err) return callback(err, undefined);
-    var filenamesWithDir = filenames.map(function(filename){
-      return 'pioneers/' + filename;
-    });
-    callback(false, filenamesWithDir);
+/* load cache */
+var cache = new Map();
+function loadCache() {
+  var filenames = fs.readdirSync('pioneers');
+  filenames.forEach(function(file){
+    var data = fs.readFileSync('pioneers/' + file, {encoding: 'utf8'});
+    var pioneer = JSON.parse(data);
+    cache.set(pioneer.id, pioneer);
   });
 }
-
-/** @function parseFiles
- * Asynchronous gelper function that takes an array of JSON
- * filenames, and a callback.
- * The first argument of the callback is an error, and
- * the second is an array of the objects corresponding to
- * the JSON files.
- * @param {string[]} filenames - the JSON filenames
- * @param {function} callback - the callback function
- */
-function parseFiles(filenames, callback) {
-  var objectsToParse = filenames.length;
-  var objects = [];
-  filenames.forEach(function(filename){
-    fs.readFile(filename, function(err, data){
-      // if no error ocurrs, parse the file data and
-      // store it in the objects array.
-      if(err) console.error(err);
-      else objects.push(JSON.parse(data));
-      // We reduce the number of files to parse,
-      // regardless of the outcome
-      objectsToParse--;
-      // If we've finished parsing all JSON files,
-      // trigger the callback
-      if(objectsToParse == 0) {
-        callback(false, objects);
-      }
-    })
-  });
-}
+// By placing the cache loading code into a function
+// and then invoking it, we avoid polluting global
+// scope with variables like 'filenames'
+loadCache();
 
 /** @function getPioneerTags
  * A helper function to create anchor tags for each
@@ -77,17 +46,12 @@ function parseFiles(filenames, callback) {
  * JSON data as an array.
  * @param {function} callback - the callback function
  */
-function getPioneerTags(callback) {
-  getPioneerFilenames(function(err, filenames) {
-    if(err) return callback(err);
-    parseFiles(filenames, function(err, pioneers){
-      if(err) return callback(err);
-      var pioneerTags = pioneers.map(function(pioneer) {
-        return template.render('pioneerTag.html', pioneer);
-      }).join("");
-      callback(false, pioneerTags);
-    });
+function getPioneerTags() {
+  var tags = [];
+  cache.forEach(function(value){
+    tags.push(template.render('pioneerTag.html', value));
   });
+  return tags.join('');
 }
 
 /** @function serveIndex
@@ -97,17 +61,9 @@ function getPioneerTags(callback) {
  * @param {http.serverResponse} res - the response object
  */
 function serveIndex(req, res) {
-  getPioneerTags(function(err, tags){
-    if(err) {
-      console.error(err);
-      res.statusCode = 500;
-      res.statusMessage = 'Server error';
-      res.end();
-      return;
-    }
-    res.setHeader('Content-Type', 'text/html');
-    res.end(template.render('index.html', {pioneerTags: tags}));
-  });
+  var tags = getPioneerTags();
+  res.setHeader('Content-Type', 'text/html');
+  res.end(template.render('index.html', {pioneerTags: tags}));
 }
 
 /** @function serveImage
@@ -139,17 +95,10 @@ function serveImage(fileName, req, res) {
  * @param {http.serverResponse} - the response object
  */
 function servePioneer(filename, req, res) {
-  fs.readFile('pioneers/' + filename + '.json', function(err, data) {
-    if(err) {
-      console.error(err);
-      res.statusCode = 500;
-      res.statusMessage = "Server error";
-      return;
-    }
-    var pioneer = JSON.parse(data);
-    res.setHeader('Content-Type', 'text/html');
-    res.end(template.render('pioneer.html', pioneer));
-  })
+  var id = filename.split('.')[0];
+  var pioneer = cache.get(parseInt(id));
+  res.setHeader('Content-Type', 'text/html');
+  res.end(template.render('pioneer.html', pioneer));
 }
 
 /** @function uploadPioneer
@@ -168,7 +117,7 @@ function uploadPioneer(req, res) {
       res.end("No file specified");
       return;
     }
-    // make sure image was in jpeg format
+    // make sure image is in jpeg format
     if(req.body.image.contentType != 'image/jpeg'){
       res.statusCode = 400;
       res.statusMessage = "Must be type image/jpeg";
@@ -195,19 +144,14 @@ function uploadPioneer(req, res) {
         description: req.body.description,
         imageUrl: req.body.image.filename
       }
+      // Save to cache
+      cache.set(id, pioneer);
       // Write the JSON file
-      fs.writeFile('pioneers/' + id + '.json', JSON.stringify(pioneer), function(err){
-        if(err) {
-          console.error(err);
-          req.statusCode = 500;
-          req.statusMessage = "Server error";
-          req.end("Unable to create pioneer");
-          return;
-        }
-        // If we reach this point, everything is saved,
-        // so serve the updated index.
-        serveIndex(req, res);
-      });
+      fs.writeFile('pioneers/' + id + '.json', JSON.stringify(pioneer));
+      // Since the pioneer is cached, we don't need
+      // to wait for the JSON to save before serving
+      // the updated index.
+      serveIndex(req, res);
     });
   });
 }
